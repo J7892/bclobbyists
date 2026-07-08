@@ -1,0 +1,57 @@
+name: B.C. Lobbyist Scraper Monitor
+
+on:
+  schedule:
+    - cron: '0 8 * * *' # Run daily at 08:00 UTC
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas playwright beautifulsoup4
+
+    - name: Install Playwright Chromium Browser
+      run: |
+        playwright install chromium
+
+    - name: Run Daily Scraper Script
+      env:
+        SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+        SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+      run: |
+        python bc_lobbyist_scraper.py
+
+    - name: Commit and Push Updated Ledger Archive
+      if: always() # Forces saving the checkpoint CSV even if the scraper fails mid-run
+      run: |
+        git config --global user.name "GitHub Actions Bot"
+        git config --global user.email "actions@github.com"
+        git add bc_lobbyists_historical.csv || true
+        git commit -m "Automated Daily Sync: Appending fresh registration disclosures" || true
+        git push || true
+
+    - name: Upload Diagnostic Debug Artifacts
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: scraper-debug-logs
+        path: |
+          *.log
+          *.png
+          *.html
+        if-no-files-found: ignore
